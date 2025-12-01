@@ -24,8 +24,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.nfcapp.ui.theme.NFCAppTheme
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.text.Charsets
 
@@ -62,18 +65,16 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (nfcAdapter?.isEnabled == true) {
-            // IMPORTANTE: FLAG_MUTABLE é necessário para que o sistema possa adicionar os dados da tag ao Intent
+            // Usar FLAG_CANCEL_CURRENT para garantir um PendingIntent limpo e novo
             val pendingIntent = PendingIntent.getActivity(
                 this, 0,
                 Intent(this, javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-                PendingIntent.FLAG_MUTABLE
+                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_CANCEL_CURRENT
             )
 
-            // Filtro "apanha-tudo" para garantir que detetamos qualquer tag
             val tagFilter = IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED)
             val intentFilters = arrayOf(tagFilter)
 
-            // techLists null significa que aceitamos qualquer tecnologia se usarmos ACTION_TAG_DISCOVERED
             nfcAdapter?.enableForegroundDispatch(this, pendingIntent, intentFilters, null)
         }
     }
@@ -85,17 +86,20 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleIntent(intent)
     }
 
     private fun handleIntent(intent: Intent) {
         val action = intent.action
-        // Aceitamos qualquer ação de NFC
         if (NfcAdapter.ACTION_TAG_DISCOVERED == action || 
             NfcAdapter.ACTION_TECH_DISCOVERED == action || 
             NfcAdapter.ACTION_NDEF_DISCOVERED == action) {
             
             Toast.makeText(this, "Cartão NFC detetado!", Toast.LENGTH_SHORT).show()
+            
+            val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            var newContent = ""
 
             var ndefContentFound = false
             val rawMessages = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES)
@@ -108,7 +112,7 @@ class MainActivity : ComponentActivity() {
                                 val langCodeLen = record.payload[0].toInt() and 0x3F
                                 val textEncoding = if ((record.payload[0].toInt() and 0x80) == 0) Charsets.UTF_8 else Charsets.UTF_16
                                 if (record.payload.size > langCodeLen + 1) {
-                                    nfcContent = String(record.payload, langCodeLen + 1, record.payload.size - langCodeLen - 1, textEncoding)
+                                    newContent = String(record.payload, langCodeLen + 1, record.payload.size - langCodeLen - 1, textEncoding)
                                     ndefContentFound = true
                                     break
                                 }
@@ -125,11 +129,14 @@ class MainActivity : ComponentActivity() {
                 val tag: Tag? = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG)
                 if (tag != null) {
                     val tagId = tag.id.joinToString(":") { String.format(Locale.US, "%02X", it) }
-                    nfcContent = "ID da Tag: $tagId"
+                    newContent = "ID da Tag: $tagId"
                 } else {
-                    nfcContent = "Tag detetada, mas sem dados legíveis."
+                    newContent = "Tag detetada, mas sem dados legíveis."
                 }
             }
+            
+            // Atualiza o estado com o conteúdo e o timestamp para forçar a atualização visual
+            nfcContent = "$newContent\n\n(Lido às $timestamp)"
         }
     }
 }
@@ -142,6 +149,7 @@ fun NfcReaderScreen(nfcContent: String, modifier: Modifier = Modifier) {
     ) {
         Text(
             text = nfcContent,
+            textAlign = TextAlign.Center
         )
     }
 }
